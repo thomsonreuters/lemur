@@ -6,6 +6,7 @@
 .. moduleauthor:: Kevin Glisson <kglisson@netflix.com>
 """
 import arrow
+import ipaddress
 
 from sqlalchemy import func, or_
 from flask import g, current_app
@@ -342,6 +343,16 @@ def create_csr(**csr_config):
                 for name in v['names']:
                     if name['name_type'] == 'DNSName':
                         general_names.append(x509.DNSName(name['value']))
+                    elif name['name_type'] == 'IPAddress':
+                        try:
+                            general_names.append(x509.IPAddress(ipaddress.IPv4Address(name['value'])))
+                        except ipaddress.AddressValueError:
+                            current_app.logger.error(
+                                "Invalid SAN IPv4 IPAddress value in CSR: {0}".format(name['value']))
+                    else:
+                        # unsupported subject alternative name type
+                        current_app.logger.warning(
+                            "Unsupported SAN type in CSR: {0} (skipping)".format(name['name_type']))
 
                 builder = builder.add_extension(
                     x509.SubjectAlternativeName(general_names), critical=True

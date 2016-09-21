@@ -340,7 +340,75 @@ def test_create_csr():
     assert private_key
 
 
-def test_import(logged_in_user):
+def test_create_csr_san_ipaddresses():
+    import ipaddress
+    from cryptography import x509
+    from cryptography.hazmat.backends import default_backend
+    from cryptography.hazmat.primitives import serialization
+    from lemur.certificates.service import create_csr
+
+    IP_ADDRESS = '127.0.0.1'
+
+    extensions = {'sub_alt_names': {'names': [{'name_type': 'IPAddress', 'value': IP_ADDRESS}]}}
+    csr, private_key = create_csr(owner='joe@example.com', common_name='ACommonName', organization='test',
+                                  organizational_unit='Meters', country='US',
+                                  state='CA', location='Here', extensions=extensions)
+    assert csr
+    assert private_key
+
+    serialization.load_pem_private_key(private_key, password=None, backend=default_backend())
+    csr = x509.load_pem_x509_csr(csr, default_backend())
+    san_extensions = csr.extensions.get_extension_for_class(x509.SubjectAlternativeName)
+    ipaddresses = san_extensions.value.get_values_for_type(x509.IPAddress)
+
+    assert ipaddress.ip_address(IP_ADDRESS) in ipaddresses
+
+
+def test_create_csr_san_invalid_ip(app):
+    # using app fixture for logging call in create_csr() method
+    from cryptography import x509
+    from cryptography.hazmat.backends import default_backend
+    from cryptography.hazmat.primitives import serialization
+    from lemur.certificates.service import create_csr
+
+    extensions = {'sub_alt_names': {'names': [{'name_type': 'IPAddress', 'value': 'invalid_ip'}]}}
+    csr, private_key = create_csr(owner='joe@example.com', common_name='ACommonName', organization='test',
+                                  organizational_unit='Meters', country='US',
+                                  state='CA', location='Here', extensions=extensions)
+    assert csr
+    assert private_key
+
+    serialization.load_pem_private_key(private_key, password=None, backend=default_backend())
+    csr = x509.load_pem_x509_csr(csr, default_backend())
+    san_extensions = csr.extensions.get_extension_for_class(x509.SubjectAlternativeName)
+    ipaddresses = san_extensions.value.get_values_for_type(x509.IPAddress)
+
+    assert ipaddresses == []
+
+
+def test_create_csr_san_unknown_type(app):
+    # using app fixture for logging call in create_csr() method
+    from cryptography import x509
+    from cryptography.hazmat.backends import default_backend
+    from cryptography.hazmat.primitives import serialization
+    from lemur.certificates.service import create_csr
+
+    extensions = {'sub_alt_names': {'names': [{'name_type': 'uniformResourceIdentifier', 'value': '/test'}]}}
+    csr, private_key = create_csr(owner='joe@example.com', common_name='ACommonName', organization='test',
+                                  organizational_unit='Meters', country='US',
+                                  state='CA', location='Here', extensions=extensions)
+    assert csr
+    assert private_key
+
+    serialization.load_pem_private_key(private_key, password=None, backend=default_backend())
+    csr = x509.load_pem_x509_csr(csr, default_backend())
+    san_extensions = csr.extensions.get_extension_for_class(x509.SubjectAlternativeName)
+    uris = san_extensions.value.get_values_for_type(x509.UniformResourceIdentifier)
+
+    assert uris == []
+
+
+def test_import(session):
     from lemur.certificates.service import import_certificate
     cert = import_certificate(body=INTERNAL_VALID_LONG_STR, chain=INTERNAL_VALID_SAN_STR, private_key=PRIVATE_KEY_STR)
     assert str(cert.not_after) == '2040-01-01 20:30:52'
@@ -352,7 +420,7 @@ def test_import(logged_in_user):
     assert cert.name == 'ACustomName2'
 
 
-def test_upload(logged_in_user):
+def test_upload(session):
     from lemur.certificates.service import upload
     cert = upload(body=INTERNAL_VALID_LONG_STR, chain=INTERNAL_VALID_SAN_STR, private_key=PRIVATE_KEY_STR, owner='joe@example.com')
     assert str(cert.not_after) == '2040-01-01 20:30:52'
