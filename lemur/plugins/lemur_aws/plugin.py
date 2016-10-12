@@ -42,7 +42,7 @@ from lemur.plugins.lemur_aws import iam, s3
 from lemur.plugins import lemur_aws as aws
 
 
-class AWSDestinationPlugin(DestinationPlugin):
+class ELBDestinationPlugin(DestinationPlugin):
     title = 'AWS-ELB'
     slug = 'aws-destination'
     description = 'Allow the uploading of certificates to AWS ELB'
@@ -79,7 +79,7 @@ class AWSDestinationPlugin(DestinationPlugin):
             'required': True,
             'validation': '/^[0-9]{12,12}$/',
             'helpMessage': 'Must be a valid port!',
-            'default' : '443'
+            'default': '443'
         }
     ]
 
