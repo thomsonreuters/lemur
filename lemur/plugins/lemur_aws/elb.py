@@ -6,6 +6,8 @@
 .. moduleauthor:: Kevin Glisson <kglisson@netflix.com>
 """
 import botocore
+from boto.exception import BotoServerError
+import time
 from flask import current_app
 
 from retrying import retry
@@ -89,7 +91,8 @@ def describe_load_balancer_policies(load_balancer_name, policy_names, **kwargs):
     :param load_balancer_name:
     :return:
     """
-    return kwargs['client'].describe_load_balancer_policies(LoadBalancerName=load_balancer_name, PolicyNames=policy_names)
+    return kwargs['client'].describe_load_balancer_policies(LoadBalancerName=load_balancer_name,
+                                                            PolicyNames=policy_names)
 
 
 @sts_client('elb')
@@ -114,8 +117,16 @@ def attach_certificate(account_number, region, name, port, certificate_id):
     :param port:
     :param certificate_id:
     """
-    return assume_service(account_number, 'elb', region).set_lb_listener_SSL_certificate(name, port, certificate_id)
+    elb = assume_service(account_number, 'elb', region)
 
+    time.sleep(5)
+    for x in range(0, 3):
+        try:
+            retVal = elb.set_lb_listener_SSL_certificate(name, port, certificate_id)
+            break
+        except BotoServerError:
+            time.sleep(5)
+    return retVal
 
 # def create_new_listeners(account_number, region, name, listeners=None):
 #     """

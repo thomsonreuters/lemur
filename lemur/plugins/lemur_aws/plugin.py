@@ -43,9 +43,9 @@ from lemur.plugins import lemur_aws as aws
 
 
 class AWSDestinationPlugin(DestinationPlugin):
-    title = 'AWS'
+    title = 'AWS-ELB'
     slug = 'aws-destination'
-    description = 'Allow the uploading of certificates to AWS IAM'
+    description = 'Allow the uploading of certificates to AWS ELB'
     version = aws.VERSION
 
     author = 'Kevin Glisson'
@@ -58,6 +58,28 @@ class AWSDestinationPlugin(DestinationPlugin):
             'required': True,
             'validation': '/^[0-9]{12,12}$/',
             'helpMessage': 'Must be a valid AWS account number!',
+        },
+        {
+            'name': 'region',
+            'type': 'str',
+            'required': True,
+            'validation': '/^[0-9]{12,12}$/',
+            'helpMessage': 'Must be a valid region!',
+        },
+        {
+            'name': 'elb',
+            'type': 'str',
+            'required': True,
+            'validation': '/^[0-9]{12,12}$/',
+            'helpMessage': 'Must be a valid elb!',
+        },
+        {
+            'name': 'port',
+            'type': 'str',
+            'required': True,
+            'validation': '/^[0-9]{12,12}$/',
+            'helpMessage': 'Must be a valid port!',
+            'default' : '443'
         }
     ]
 
@@ -68,16 +90,17 @@ class AWSDestinationPlugin(DestinationPlugin):
     # }
 
     def upload(self, name, body, private_key, cert_chain, options, **kwargs):
+        account_num = self.get_option('accountNumber', options)
         try:
-            iam.upload_cert(self.get_option('accountNumber', options), name, body, private_key,
-                            cert_chain=cert_chain)
+            cert = iam.upload_cert(account_num, name, body, private_key,
+                                   cert_chain=cert_chain)
         except BotoServerError as e:
             if e.error_code != 'EntityAlreadyExists':
-                raise Exception(e)
+                raise e
 
         e = self.get_option('elb', options)
         if e:
-            attach_certificate(kwargs['accountNumber'], ['region'], e['name'], e['port'], e['certificateId'])
+            attach_certificate(account_num, self.get_option('region', options), e, self.get_option('port', options), cert.arn)
 
 
 class AWSSourcePlugin(SourcePlugin):
