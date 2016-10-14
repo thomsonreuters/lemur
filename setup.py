@@ -175,6 +175,7 @@ setup(
             'aws_destination = lemur.plugins.lemur_aws.plugin:ELBDestinationPlugin',
             'aws_source = lemur.plugins.lemur_aws.plugin:AWSSourcePlugin',
             'aws_s3 = lemur.plugins.lemur_aws.plugin:S3DestinationPlugin',
+            'aws_cloudfront = lemur.plugins.lemur_aws.plugin:CloudFrontDestinationPlugin',
             'email_notification = lemur.plugins.lemur_email.plugin:EmailNotificationPlugin',
             'slack_notification = lemur.plugins.lemur_slack.plugin:SlackNotificationPlugin',
             'java_truststore_export = lemur.plugins.lemur_java.plugin:JavaTruststoreExportPlugin',
@@ -183,6 +184,7 @@ setup(
             'atlas_metric = lemur.plugins.lemur_atlas.plugin:AtlasMetricPlugin',
             'kubernetes_destination = lemur.plugins.lemur_kubernetes.plugin:KubernetesDestinationPlugin',
             'cryptography_issuer = lemur.plugins.lemur_cryptography.plugin:CryptographyIssuerPlugin',
+            'cfssl_issuer = lemur.plugins.lemur_cfssl.plugin:CfsslIssuerPlugin',
         ],
     },
     classifiers=[

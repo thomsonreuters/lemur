@@ -294,3 +294,41 @@ class S3DestinationPlugin(DestinationPlugin):
         else:
             pem_body = key + '\n' + body + '\n' + cert_chain + '\n'
             s3.write_to_s3(account_number, bucket, name, pem_body, encrypt=encrypt)
+
+
+class CloudFrontDestinationPlugin(DestinationPlugin):
+    title = 'AWS-CloudFront'
+    slug = 'AWS-CloudFront'
+    description = 'Allow the uploading of certificates to CloudFront'
+    version = aws.VERSION
+
+    author = 'David Loutsch'
+    author_url = 'https://github.com/netflix/lemur'
+    options = [
+        {
+            'name': 'accountNumber',
+            'type': 'str',
+            'required': True,
+            'validation': '/^[0-9]{12,12}$/',
+            'helpMessage': 'Must be a valid AWS account number!',
+        },
+        {
+            'name': 'cloudFront',
+            'type': 'str',
+            'required': True,
+            'validation': '/^[0-9]{12,12}$/',
+            'helpMessage': 'Must be a valid CloudFront!',
+        }
+    ]
+
+    def upload(self, name, body, private_key, cert_chain, options, **kwargs):
+        account_num = self.get_option('accountNumber', options)
+        e = self.get_option('elb', options)
+        try:
+            cert = iam.upload_cert(account_num, name, body, private_key, cert_chain=cert_chain, path='/cloudfront/cloudpath/')
+        except BotoServerError as e:
+            if e.error_code != 'EntityAlreadyExists':
+                raise e
+
+        if e:
+            attach_certificate(account_num, self.get_option('region', options), e, self.get_option('port', options), cert.arn)

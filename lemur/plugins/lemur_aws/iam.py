@@ -19,7 +19,7 @@ def get_name_from_arn(arn):
     return arn.split("/", 1)[1]
 
 
-def upload_cert(account_number, name, body, private_key, cert_chain=None):
+def upload_cert(account_number, name, body, private_key, cert_chain=None, path=None):
     """
     Upload a certificate to AWS
 
@@ -27,10 +27,11 @@ def upload_cert(account_number, name, body, private_key, cert_chain=None):
     :param name:
     :param private_key:
     :param cert_chain:
+    :param path:
     :return:
     """
     return assume_service(account_number, 'iam').upload_server_cert(name, str(body), str(private_key),
-                                                                    cert_chain=str(cert_chain))
+                                                                    cert_chain=str(cert_chain), path=path)
 
 
 def delete_cert(account_number, cert_name):
