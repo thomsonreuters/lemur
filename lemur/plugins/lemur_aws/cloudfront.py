@@ -21,7 +21,7 @@ def attach_certificate_to_cloudfront(account_number, region, name, certificate_i
     :param certificate_id:
     """
     cloudfront = assume_service(account_number, 'cloudfront', region)
-    distro = cloudfront.get_distribution_config(name)
+    distro = cloudfront.get_distribution_config(Id=name)
     etag = distro.get('ETag')
     distro.get('DistributionConfig').get('ViewerCertificate')['IAMCertificateId'] = certificate_id
     time.sleep(5)

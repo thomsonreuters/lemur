@@ -38,14 +38,15 @@ from boto.exception import BotoServerError
 from lemur.plugins.bases import DestinationPlugin, SourcePlugin
 from lemur.plugins.lemur_aws.ec2 import get_regions
 from lemur.plugins.lemur_aws.elb import get_all_elbs, describe_load_balancer_policies, attach_certificate
+from lemur.plugins.lemur_aws.cloudfront import attach_certificate_to_cloudfront
 from lemur.plugins.lemur_aws import iam, s3
 from lemur.plugins import lemur_aws as aws
 
 
-class ELBDestinationPlugin(DestinationPlugin):
-    title = 'AWS-ELB'
+class AWSDestinationPlugin(DestinationPlugin):
+    title = 'AWS-DESTINATION'
     slug = 'aws-destination'
-    description = 'Allow the uploading of certificates to AWS ELB'
+    description = 'Allow the uploading of certificates to an AWS destination'
     version = aws.VERSION
 
     author = 'Kevin Glisson'
@@ -80,6 +81,13 @@ class ELBDestinationPlugin(DestinationPlugin):
             'validation': '/^[0-9]{12,12}$/',
             'helpMessage': 'Must be a valid port!',
             'default': '443'
+        },
+        {
+            'name': 'cloudFront',
+            'type': 'str',
+            'required': True,
+            'validation': '/^[0-9]{12,12}$/',
+            'helpMessage': 'Must be a valid CloudFront!',
         }
     ]
 
@@ -93,14 +101,18 @@ class ELBDestinationPlugin(DestinationPlugin):
         account_num = self.get_option('accountNumber', options)
         try:
             cert = iam.upload_cert(account_num, name, body, private_key,
-                                   cert_chain=cert_chain)
+                                   cert_chain=cert_chain, path='/cloudfront/cloudpath/')
         except BotoServerError as e:
             if e.error_code != 'EntityAlreadyExists':
                 raise e
 
-        e = self.get_option('elb', options)
-        if e:
-            attach_certificate(account_num, self.get_option('region', options), e, self.get_option('port', options), cert.arn)
+        elb = self.get_option('elb', options)
+        if elb:
+            attach_certificate(account_num, self.get_option('region', options), elb, self.get_option('port', options), cert.arn)
+        cloudfront = self.get_option('cloudFront', options)
+        if cloudfront:
+            attach_certificate_to_cloudfront(account_num, self.get_option('region', options), cloudfront,
+                                                 cert.server_certificate_id)
 
 
 class AWSSourcePlugin(SourcePlugin):
@@ -294,41 +306,3 @@ class S3DestinationPlugin(DestinationPlugin):
         else:
             pem_body = key + '\n' + body + '\n' + cert_chain + '\n'
             s3.write_to_s3(account_number, bucket, name, pem_body, encrypt=encrypt)
-
-
-class CloudFrontDestinationPlugin(DestinationPlugin):
-    title = 'AWS-CloudFront'
-    slug = 'AWS-CloudFront'
-    description = 'Allow the uploading of certificates to CloudFront'
-    version = aws.VERSION
-
-    author = 'David Loutsch'
-    author_url = 'https://github.com/netflix/lemur'
-    options = [
-        {
-            'name': 'accountNumber',
-            'type': 'str',
-            'required': True,
-            'validation': '/^[0-9]{12,12}$/',
-            'helpMessage': 'Must be a valid AWS account number!',
-        },
-        {
-            'name': 'cloudFront',
-            'type': 'str',
-            'required': True,
-            'validation': '/^[0-9]{12,12}$/',
-            'helpMessage': 'Must be a valid CloudFront!',
-        }
-    ]
-
-    def upload(self, name, body, private_key, cert_chain, options, **kwargs):
-        account_num = self.get_option('accountNumber', options)
-        e = self.get_option('elb', options)
-        try:
-            cert = iam.upload_cert(account_num, name, body, private_key, cert_chain=cert_chain, path='/cloudfront/cloudpath/')
-        except BotoServerError as e:
-            if e.error_code != 'EntityAlreadyExists':
-                raise e
-
-        if e:
-            attach_certificate(account_num, self.get_option('region', options), e, self.get_option('port', options), cert.arn)
