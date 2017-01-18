@@ -12,36 +12,13 @@ from flask import current_app
 from lemur import database
 from lemur.sources.models import Source
 from lemur.certificates.models import Certificate
-from lemur.certificates import service as cert_service
+from lemur.certificates import service as certificate_service
 from lemur.endpoints import service as endpoint_service
 from lemur.destinations import service as destination_service
 
 from lemur.certificates.schemas import CertificateUploadInputSchema
 
 from lemur.plugins.base import plugins
-
-
-# TODO optimize via sql query
-def _disassociate_certs_from_source(certificates, source):
-    current_certificates = cert_service.get_by_source(source_label=source.label)
-    missing = []
-    for cc in current_certificates:
-        for fc in certificates:
-            if fc['body'] == cc.body:
-                break
-        else:
-            missing.append(cc)
-
-    for c in missing:
-        for s in c.sources:
-            if s.label == source:
-                current_app.logger.info(
-                    "Certificate {name} is no longer associated with {source}.".format(
-                        name=c.name,
-                        source=source.label
-                    )
-                )
-                c.sources.delete(s)
 
 
 def certificate_create(certificate, source):
@@ -52,7 +29,7 @@ def certificate_create(certificate, source):
 
     data['creator'] = certificate['creator']
 
-    cert = cert_service.import_certificate(**data)
+    cert = certificate_service.import_certificate(**data)
     cert.description = "This certificate was automatically discovered by Lemur"
     cert.sources.append(source)
     sync_update_destination(cert, source)
@@ -95,20 +72,11 @@ def sync_endpoints(source):
     for endpoint in endpoints:
         exists = endpoint_service.get_by_dnsname(endpoint['dnsname'])
 
-        certificate_name = endpoint.pop('certificate_name', None)
-        certificate = endpoint.pop('certificate', None)
-
-        if certificate_name:
-            cert = cert_service.get_by_name(certificate_name)
-
-        elif certificate:
-            cert = cert_service.find_duplicates(certificate)
-            if not cert:
-                cert = cert_service.import_certificate(**certificate)
+        cert = certificate_service.get_by_name(endpoint['certificate_name'])
 
         if not cert:
             current_app.logger.error(
-                "Unable to find associated certificate, be sure that certificates are sync'ed before endpoints")
+                "Certificate Not Found. Name: {0} Endpoint: {1}".format(endpoint['certificate_name'], endpoint['name']))
             continue
 
         endpoint['certificate'] = cert
@@ -124,10 +92,12 @@ def sync_endpoints(source):
         endpoint['source'] = source
 
         if not exists:
+            current_app.logger.debug("Endpoint Created: Name: {name}".format(name=endpoint['name']))
             endpoint_service.create(**endpoint)
             new += 1
 
         else:
+            current_app.logger.debug("Endpoint Updated: Name: {name}".format(name=endpoint['name']))
             endpoint_service.update(exists.id, **endpoint)
             updated += 1
 
@@ -142,28 +112,22 @@ def sync_certificates(source, user):
     certificates = s.get_certificates(source.options)
 
     for certificate in certificates:
-        exists = cert_service.find_duplicates(certificate)
+        exists = certificate_service.get_by_name(certificate['name'])
 
         certificate['owner'] = user.email
         certificate['creator'] = user
 
         if not exists:
+            current_app.logger.debug("Creating Certificate. Name: {name}".format(name=certificate['name']))
             certificate_create(certificate, source)
             new += 1
 
-        # check to make sure that existing certificates have the current source associated with it
-        elif len(exists) == 1:
-            certificate_update(exists[0], source)
-            updated += 1
         else:
-            current_app.logger.warning(
-                "Multiple certificates found, attempt to deduplicate the following certificates: {0}".format(
-                    ",".join([x.name for x in exists])
-                )
-            )
+            current_app.logger.debug("Updating Certificate. Name: {name}".format(name=certificate['name']))
+            certificate_update(exists, source)
+            updated += 1
 
-    # we need to try and find the absent of certificates so we can properly disassociate them when they are deleted
-    _disassociate_certs_from_source(certificates, source)
+    assert len(certificates) == new + updated
 
     return new, updated
 
@@ -178,33 +142,13 @@ def sync(source, user):
     return {'endpoints': (new_endpoints, updated_endpoints), 'certificates': (new_certs, updated_certs)}
 
 
-def clean(source):
-    s = plugins.get(source.plugin_name)
-
-    try:
-        certificates = s.clean(source.options)
-    except NotImplementedError:
-        current_app.logger.warning("Cannot clean source: {0}, source plugin does not implement 'clean()'".format(
-            source.label
-        ))
-        return
-
-    for certificate in certificates:
-        cert = cert_service.get_by_name(certificate)
-
-        if cert:
-            current_app.logger.warning("Removed {0} from source {1} during cleaning".format(
-                cert.name,
-                source.label
-            ))
-            cert.sources.remove(source)
-
-
 def create(label, plugin_name, options, description=None):
     """
     Creates a new source, that can then be used as a source for certificates.
 
     :param label: Source common name
+    :param plugin_name:
+    :param options:
     :param description:
     :rtype : Source
     :return: New source
@@ -219,6 +163,8 @@ def update(source_id, label, options, description):
 
     :param source_id:  Lemur assigned ID
     :param label: Source common name
+    :param options:
+    :param description:
     :rtype : Source
     :return:
     """

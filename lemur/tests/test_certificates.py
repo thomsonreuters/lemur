@@ -41,7 +41,7 @@ def test_get_certificate_primitives(certificate):
 
     with freeze_time(datetime.date(year=2016, month=10, day=30)):
         primitives = get_certificate_primitives(certificate)
-        assert len(primitives) == 16
+        assert len(primitives) == 17
 
 
 def test_certificate_edit_schema(session):
@@ -153,7 +153,7 @@ def test_certificate_input_schema(client, authority):
     assert data['country'] == 'US'
     assert data['location'] == 'Los Gatos'
 
-    assert len(data.keys()) == 16
+    assert len(data.keys()) == 17
 
 
 def test_certificate_input_with_extensions(client, authority):
@@ -218,7 +218,7 @@ def test_certificate_valid_years(client, authority):
         'owner': 'jim@example.com',
         'authority': {'id': authority.id},
         'description': 'testtestest',
-        'validityYears': 3
+        'validityYears': 2
     }
 
     data, errors = CertificateInputSchema().load(input_data)

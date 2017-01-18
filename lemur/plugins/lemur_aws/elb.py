@@ -10,20 +10,26 @@ from flask import current_app
 
 from retrying import retry
 
+from lemur.extensions import metrics
 from lemur.exceptions import InvalidListener
 from lemur.plugins.lemur_aws.sts import sts_client
 
 
 def retry_throttled(exception):
     """
-    Determiens if this exception is due to throttling
+    Determines if this exception is due to throttling
     :param exception:
     :return:
     """
     if isinstance(exception, botocore.exceptions.ClientError):
         if exception.response['Error']['Code'] == 'LoadBalancerNotFound':
-            return True
-    return False
+            return False
+
+        if exception.response['Error']['Code'] == 'CertificateNotFound':
+            return False
+
+    metrics.send('ec2_retry', 'counter', 1)
+    return True
 
 
 def is_valid(listener_tuple):
@@ -63,11 +69,83 @@ def get_all_elbs(**kwargs):
 
         elbs += response['LoadBalancerDescriptions']
 
-        if not response.get('IsTruncated'):
+        if not response.get('NextMarker'):
             return elbs
+        else:
+            kwargs.update(dict(Marker=response['NextMarker']))
 
-        if response['NextMarker']:
-            kwargs.update(dict(marker=response['NextMarker']))
+
+def get_all_elbs_v2(**kwargs):
+    """
+    Fetches all elbs for a given account/region
+
+    :param kwargs:
+    :return:
+    """
+    elbs = []
+
+    while True:
+        response = get_elbs_v2(**kwargs)
+        elbs += response['LoadBalancers']
+
+        if not response.get('NextMarker'):
+            return elbs
+        else:
+            kwargs.update(dict(Marker=response['NextMarker']))
+
+
+@sts_client('elbv2')
+@retry(retry_on_exception=retry_throttled, stop_max_attempt_number=7, wait_exponential_multiplier=1000)
+def get_listener_arn_from_endpoint(endpoint_name, endpoint_port, **kwargs):
+    """
+    Get a listener ARN from a endpoint.
+    :param endpoint_name:
+    :param endpoint_port:
+    :return:
+    """
+    client = kwargs.pop('client')
+    elbs = client.describe_load_balancers(Names=[endpoint_name])
+    for elb in elbs['LoadBalancers']:
+        listeners = client.describe_listeners(LoadBalancerArn=elb['LoadBalancerArn'])
+        for listener in listeners['Listeners']:
+            if listener['Port'] == endpoint_port:
+                return listener['ListenerArn']
+
+
+@sts_client('elb')
+@retry(retry_on_exception=retry_throttled, stop_max_attempt_number=7, wait_exponential_multiplier=1000)
+def get_elbs(**kwargs):
+    """
+    Fetches one page elb objects for a given account and region.
+    """
+    client = kwargs.pop('client')
+    return client.describe_load_balancers(**kwargs)
+
+
+@sts_client('elbv2')
+@retry(retry_on_exception=retry_throttled, stop_max_attempt_number=7, wait_exponential_multiplier=1000)
+def get_elbs_v2(**kwargs):
+    """
+    Fetches one page of elb objects for a given account and region.
+
+    :param kwargs:
+    :return:
+    """
+    client = kwargs.pop('client')
+    return client.describe_load_balancers(**kwargs)
+
+
+@sts_client('elbv2')
+@retry(retry_on_exception=retry_throttled, stop_max_attempt_number=7, wait_exponential_multiplier=1000)
+def describe_listeners_v2(**kwargs):
+    """
+    Fetches one page of listener objects for a given elb arn.
+
+    :param kwargs:
+    :return:
+    """
+    client = kwargs.pop('client')
+    return client.describe_listeners(**kwargs)
 
 
 def get_all_elbs_v2(**kwargs):

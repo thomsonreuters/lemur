@@ -9,7 +9,7 @@ import arrow
 from datetime import timedelta
 
 from flask import current_app
-from sqlalchemy import func, or_, cast, Boolean
+from sqlalchemy import func, or_, not_, cast, Boolean
 
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
@@ -68,17 +68,18 @@ def get_all_certs():
     return Certificate.query.all()
 
 
-def get_by_source(source_label):
+def get_all_pending_cleaning(source):
     """
-    Retrieves all certificates from a given source.
+    Retrieves all certificates that are available for cleaning.
 
-    :param source_label:
+    :param source:
     :return:
     """
-    return Certificate.query.filter(Certificate.sources.any(label=source_label))
+    return Certificate.query.filter(Certificate.sources.any(id=source.id))\
+                            .filter(not_(Certificate.endpoints.any())).all()
 
 
-def get_all_pending_rotation():
+def get_all_pending_reissue():
     """
     Retrieves all certificates that need to be rotated.
 
@@ -94,6 +95,7 @@ def get_all_pending_rotation():
 
     return Certificate.query.filter(Certificate.rotation == True)\
         .filter(Certificate.endpoints.any())\
+        .filter(not_(Certificate.replaced.any()))\
         .filter(Certificate.not_after <= end.format('YYYY-MM-DD')).all()  # noqa
 
 
@@ -125,26 +127,16 @@ def export(cert, export_plugin):
     return plugin.export(cert.body, cert.chain, cert.private_key, export_plugin['pluginOptions'])
 
 
-def update(cert_id, owner, description, notify, destinations, notifications, replaces, roles):
+def update(cert_id, **kwargs):
     """
     Updates a certificate
     :param cert_id:
-    :param owner:
-    :param description:
-    :param notify:
-    :param destinations:
-    :param notifications:
-    :param replaces:
     :return:
     """
     cert = get(cert_id)
-    cert.notify = notify
-    cert.description = description
-    cert.destinations = destinations
-    cert.notifications = notifications
-    cert.roles = roles
-    cert.replaces = replaces
-    cert.owner = owner
+
+    for key, value in kwargs.items():
+        setattr(cert, key, value)
 
     return database.update(cert)
 
@@ -533,7 +525,8 @@ def get_certificate_primitives(certificate):
         state=certificate.state,
         location=certificate.location,
         key_type=certificate.key_type,
-        notifications=certificate.notifications
+        notifications=certificate.notifications,
+        rotation=certificate.rotation
     )
 
 
@@ -553,7 +546,7 @@ def reissue_certificate(certificate, replace=None, user=None):
         primitives['creator'] = user
 
     if replace:
-        primitives['replacements'] = [certificate]
+        primitives['replaces'] = [certificate]
 
     new_cert = create(**primitives)
 
