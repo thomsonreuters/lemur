@@ -97,19 +97,19 @@
           </div>
           <div class="checkbox">
             <label>
-              <input type="checkbox" ng-model="certificate.extensions.keyUsage.useKeyAgreement">Key Agreement
+              <input type="checkbox" ng-model="certificate.extensions.keyUsage.useKeyCertSign">Key Certificate Signature
             </label>
           </div>
         </div>
         <div class="col-sm-3">
           <div class="checkbox">
             <label>
-              <input type="checkbox" ng-model="certificate.extensions.keyUsage.useKeyCertSign">Key Certificate Signature
+              <input type="checkbox" ng-model="certificate.extensions.keyUsage.useCRLSign">CRL Sign
             </label>
           </div>
           <div class="checkbox">
             <label>
-              <input type="checkbox" ng-model="certificate.extensions.keyUsage.useCRLSign">CRL Sign
+              <input type="checkbox" ng-model="certificate.extensions.keyUsage.useKeyAgreement">Key Agreement
             </label>
           </div>
           <div class="checkbox">
@@ -143,21 +143,26 @@
           </div>
           <div class="checkbox">
             <label>
-              <input type="checkbox" ng-model="certificate.extensions.extendedKeyUsage.useEmail">Email
+              <input type="checkbox" ng-model="certificate.extensions.extendedKeyUsage.useEmailProtection">Email Protection
             </label>
           </div>
           <div class="checkbox">
             <label>
               <input type="checkbox" ng-model="certificate.extensions.extendedKeyUsage.useTimestamping">Timestamping
             </label>
-            <div class="checkbox">
-              <label>
-                <input type="checkbox" ng-model="certificate.extensions.extendedKeyUsage.useEapOverLAN">EAP Over LAN
-              </label>
-            </div>
           </div>
+          <div class="checkbox">
+            <label>
+              <input type="checkbox" ng-model="certificate.extensions.extendedKeyUsage.useCodeSigning">Code Signing
+            </label>
+           </div>
         </div>
         <div class="col-sm-3">
+          <div class="checkbox">
+            <label>
+              <input type="checkbox" ng-model="certificate.extensions.extendedKeyUsage.useEapOverLAN">EAP Over LAN
+            </label>
+          </div>
           <div class="checkbox">
             <label>
               <input type="checkbox" ng-model="certificate.extensions.extendedKeyUsage.useEapOverPPP">EAP Over PPP
@@ -165,8 +170,7 @@
           </div>
           <div class="checkbox">
             <label>
-              <input type="checkbox" ng-model="certificate.extensions.extendedKeyUsage.useSmartCardLogon">Smartcard
-              Logon
+              <input type="checkbox" ng-model="certificate.extensions.extendedKeyUsage.useSmartCardLogon">Smart Card Logon
             </label>
           </div>
           <div class="checkbox">
@@ -184,15 +188,13 @@
           <div class="checkbox">
             <label tooltip-trigger="mouseenter" tooltip-placement="top"
                    uib-tooltip="Put Issuer's keyIdentifier in this extension">
-              <input type="checkbox" ng-model="certificate.extensions.authorityKeyIdentifier.useKeyIdentifier">Key
-              Identifier
+              <input type="checkbox" ng-model="certificate.extensions.authorityKeyIdentifier.useKeyIdentifier">Key Identifier
             </label>
           </div>
           <div class="checkbox">
             <label tooltip-trigger="mouseenter" tooltip-placement="top"
                    uib-tooltip="Put Issuer's Name and Serial number">
-              <input type="checkbox" ng-model="certificate.extensions.authorityIdentifier.useAuthorityCert">Authority
-              Certificate
+              <input type="checkbox" ng-model="certificate.extensions.authorityKeyIdentifier.useAuthorityCert">Authority Certificate
             </label>
           </div>
         </div>
@@ -259,7 +261,7 @@
         <div class="col-sm-2">
           <div class="checkbox">
             <label>
-              <input type="checkbox" ng-model="certificate.extensions.custom.isCritical">Critical
+              <input type="checkbox" ng-model="certificate.customIsCritical">Critical
             </label>
           </div>
         </div>
@@ -272,7 +274,7 @@
             <td>{{ custom.oid }}</td>
             <td>{{ custom.encoding }}</td>
             <td>{{ custom.value }}</td>
-            <td>{{ custom.isCritical }}</td>
+            <td>{{ custom.isCritical ? "critical" : "" }}</td>
             <td>
               <button type="button" ng-click="certificate.removeCustom($index)"
                       class="btn btn-danger btn-sm pull-right">Remove

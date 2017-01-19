@@ -170,12 +170,9 @@ class BasicConstraintsSchema(BaseExtensionSchema):
     pass
 
 
-class AuthorityIdentifierSchema(BaseExtensionSchema):
-    use_authority_cert = fields.Boolean()
-
-
 class AuthorityKeyIdentifierSchema(BaseExtensionSchema):
     use_key_identifier = fields.Boolean()
+    use_authority_cert = fields.Boolean()
 
 
 class CertificateInfoAccessSchema(BaseExtensionSchema):
@@ -194,6 +191,8 @@ class KeyUsageSchema(BaseExtensionSchema):
     use_key_encipherment = fields.Boolean()
     use_digital_signature = fields.Boolean()
     use_non_repudiation = fields.Boolean()
+    use_key_agreement = fields.Boolean()
+    use_key_cert_sign = fields.Boolean()
 
 
 class ExtendedKeyUsageSchema(BaseExtensionSchema):
@@ -202,8 +201,10 @@ class ExtendedKeyUsageSchema(BaseExtensionSchema):
     use_eap_over_lan = fields.Boolean()
     use_eap_over_ppp = fields.Boolean()
     use_ocsp_signing = fields.Boolean()
-    use_smart_card_authentication = fields.Boolean()
+    use_smart_card_logon = fields.Boolean()
     use_timestamping = fields.Boolean()
+    use_code_signing = fields.Boolean()
+    use_email_protection = fields.Boolean()
 
 
 class SubjectKeyIdentifierSchema(BaseExtensionSchema):
@@ -232,6 +233,7 @@ class CustomOIDSchema(BaseExtensionSchema):
     oid = fields.String()
     encoding = fields.String(validate=validators.encoding)
     value = fields.String()
+    is_critical = fields.Boolean()
 
 
 class ExtensionSchema(BaseExtensionSchema):
@@ -240,7 +242,6 @@ class ExtensionSchema(BaseExtensionSchema):
     extended_key_usage = fields.Nested(ExtendedKeyUsageSchema)
     subject_key_identifier = fields.Nested(SubjectKeyIdentifierSchema)
     sub_alt_names = fields.Nested(SubAltNamesSchema)
-    authority_identifier = fields.Nested(AuthorityIdentifierSchema)
     authority_key_identifier = fields.Nested(AuthorityKeyIdentifierSchema)
     certificate_info_access = fields.Nested(CertificateInfoAccessSchema)
     custom = fields.List(fields.Nested(CustomOIDSchema))

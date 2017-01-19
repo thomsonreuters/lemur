@@ -65,27 +65,19 @@ def test_certificate_edit_schema(session):
     assert len(data['notifications']) == 3
 
 
-def test_authority_identifier_schema():
-    from lemur.schemas import AuthorityIdentifierSchema
-    input_data = {'useAuthorityCert': True}
-
-    data, errors = AuthorityIdentifierSchema().load(input_data)
-
-    assert data == {'use_authority_cert': True}
-    assert not errors
-
-    data, errors = AuthorityIdentifierSchema().dumps(data)
-    assert not errors
-    assert data == json.dumps(input_data)
-
-
 def test_authority_key_identifier_schema():
     from lemur.schemas import AuthorityKeyIdentifierSchema
-    input_data = {'useKeyIdentifier': True}
+    input_data = {
+        'useKeyIdentifier': True,
+        'useAuthorityCert': True
+    }
 
     data, errors = AuthorityKeyIdentifierSchema().load(input_data)
 
-    assert data == {'use_key_identifier': True}
+    assert data == {
+        'use_key_identifier': True,
+        'use_authority_cert': True
+    }
     assert not errors
 
     data, errors = AuthorityKeyIdentifierSchema().dumps(data)
@@ -315,8 +307,10 @@ def test_extended_key_usage_schema():
         'useEapOverLAN': True,
         'useEapOverPPP': True,
         'useOCSPSigning': True,
-        'useSmartCardAuthentication': True,
-        'useTimestamping': True
+        'useSmartCardLogon': True,
+        'useTimestamping': True,
+        'useCodeSigning': True,
+        'useEmailProtection': True
     }
 
     data, errors = ExtendedKeyUsageSchema().load(input_data)
@@ -328,8 +322,10 @@ def test_extended_key_usage_schema():
         'use_eap_over_lan': True,
         'use_eap_over_ppp': True,
         'use_ocsp_signing': True,
-        'use_smart_card_authentication': True,
-        'use_timestamping': True
+        'use_smart_card_logon': True,
+        'use_timestamping': True,
+        'use_code_signing': True,
+        'use_email_protection': True
     }
 
 
