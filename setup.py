@@ -49,14 +49,14 @@ install_requires = [
     'six==1.10.0',
     'gunicorn==19.6.0',
     'marshmallow-sqlalchemy==0.12.1',
-    'marshmallow==2.11.1',
+    'marshmallow==2.12.1',
     'cryptography==1.7',
     'pyjwt==1.4.2',
     'xmltodict==0.10.2',
     'lockfile==0.12.2',
     'inflection==0.3.1',
     'future==0.16.0',
-    'boto3==1.4.3',
+    'boto3==1.4.4',
     'boto==2.45.0',  # we might make this optional
     'acme==0.9.3',
     'retrying==1.3.3',
@@ -66,9 +66,9 @@ install_requires = [
 
 tests_require = [
     'pyflakes',
-    'moto==0.4.30',
+    'moto==0.4.31',
     'nose==1.3.7',
-    'pytest==3.0.5',
+    'pytest==3.0.6',
     'factory-boy==2.8.1',
     'fake-factory==0.7.2',
     'pytest-flask==0.10.0',
