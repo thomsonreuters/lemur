@@ -247,5 +247,31 @@ gulp.task('package:strip', function () {
     .pipe(size());
 });
 
+gulp.task('addprefix',['addprefix:revreplace'], function(){
+  return gulp.src('lemur/static/dist/scripts/main*.js')
+    .pipe(replace('api/','lemur/api/'))
+    .pipe(replace('angular/', 'lemur/angular/'))
+    .pipe(gulp.dest('lemur/static/dist/scripts'))
+});
+gulp.task('addprefix:revision',['addprefix:templates'], function(){
+  return gulp.src(['lemur/static/dist/**/*.css','lemur/static/dist/**/*.js'])
+    .pipe(rev())
+    .pipe(gulp.dest('lemur/static/dist'))
+    .pipe(rev.manifest())
+    .pipe(gulp.dest('lemur/static/dist'))
+})
+gulp.task('addprefix:templates', function(){
+  return gulp.src(['lemur/static/dist/angular/**/*.tpl.html'])
+  .pipe(replace('angular/', 'lemur/angular/'))
+  .pipe(gulp.dest('lemur/static/dist/angular'))
+})
+gulp.task('addprefix:revreplace', ['addprefix:revision'], function(){
+  var manifest = gulp.src("lemur/static/dist/rev-manifest.json");
+  return gulp.src( "lemur/static/dist/index.html")
+    .pipe(revReplace({prefix:'lemur/', manifest: manifest}))
+    .pipe(replace('/#/','/lemur#/'))
+    .pipe(gulp.dest('lemur/static/dist'));
+})
+
 gulp.task('build', ['build:ngviews', 'build:inject', 'build:images', 'build:fonts', 'build:html', 'build:extras']);
-gulp.task('package', ['package:strip']);
+gulp.task('package', ['package:strip', 'addprefix']);
