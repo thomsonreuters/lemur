@@ -45,7 +45,7 @@ class CfsslIssuerPlugin(IssuerPlugin):
         data = {'certificate_request': csr.decode('utf_8')}
         data = json.dumps(data)
 
-        response = self.session.post(url, data=data.encode(encoding='utf_8', errors='strict'))
+        response = self.session.post(url, data=data.encode(encoding='utf_8', errors='strict'), verify=False)
         response_json = json.loads(response.content.decode('utf_8'))
         cert = response_json['result']['certificate']
 
