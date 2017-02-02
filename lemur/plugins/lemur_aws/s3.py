@@ -6,8 +6,8 @@
     :license: Apache, see LICENSE for more details.
 .. moduleauthor:: Kevin Glisson <kglisson@netflix.com>
 """
-from boto.s3.key import Key
-from lemur.plugins.lemur_aws.sts import assume_service
+import boto3
+from cStringIO import StringIO
 
 
 def write_to_s3(account_number, bucket_name, key, data, encrypt=True):
@@ -18,9 +18,8 @@ def write_to_s3(account_number, bucket_name, key, data, encrypt=True):
     :param bucket_name:
     :param data:
     """
-    conn = assume_service(account_number, 's3')
-    b = conn.get_bucket(bucket_name, validate=False)  # validate=False removes need for ListObjects permission
+    client = boto3.resource('s3')
 
-    k = Key(bucket=b, name=key)
-    k.set_contents_from_string(data, encrypt_key=encrypt)
-    k.set_canned_acl("bucket-owner-read")
+    b = client.Bucket(bucket_name)  # validate=False removes need for ListObjects permission
+
+    b.upload_fileobj(StringIO(data), key)
