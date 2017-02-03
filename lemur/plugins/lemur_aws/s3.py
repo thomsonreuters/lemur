@@ -22,4 +22,4 @@ def write_to_s3(account_number, bucket_name, key, data, encrypt=True):
 
     b = client.Bucket(bucket_name)  # validate=False removes need for ListObjects permission
 
-    b.upload_fileobj(StringIO(data), key)
+    b.upload_fileobj(StringIO(data), key, ExtraArgs={'ServerSideEncryption':'AES256'})
