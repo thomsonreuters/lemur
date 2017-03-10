@@ -64,6 +64,32 @@ angular.module('lemur')
         },
         removeCustom: function (index) {
           this.extensions.custom.splice(index, 1);
+        },
+        setEncipherOrDecipher: function (value) {
+          if (this.extensions === undefined) {
+            this.extensions = {};
+          }
+          if (this.extensions.keyUsage === undefined) {
+            this.extensions.keyUsage = {};
+          }
+          var existingValue = this.extensions.keyUsage[value];
+          if (existingValue) {
+            // Clicked on the already-selected value
+            this.extensions.keyUsage.useDecipherOnly = false;
+            this.extensions.keyUsage.useEncipherOnly = false;
+            // Uncheck both radio buttons
+            this.encipherOrDecipher = false;
+          } else {
+            // Clicked a different value
+            this.extensions.keyUsage.useKeyAgreement = true;
+            if (value === 'useEncipherOnly') {
+              this.extensions.keyUsage.useDecipherOnly = false;
+              this.extensions.keyUsage.useEncipherOnly = true;
+            } else {
+              this.extensions.keyUsage.useEncipherOnly = false;
+              this.extensions.keyUsage.useDecipherOnly = true;
+            }
+          }
         }
       });
     });
@@ -94,6 +120,15 @@ angular.module('lemur')
     AuthorityService.create = function (authority) {
       authority.attachSubAltName();
       authority.attachCustom();
+
+      if (authority.extensions.basicConstraints === undefined) {
+        authority.extensions.basicConstraints = { 'path_length': null};
+      }
+      authority.extensions.basicConstraints.ca = true;
+      if (authority.extensions.basicConstraints.path_length === 'None') {
+        authority.extensions.basicConstraints.path_length = null;
+      }
+
       if (authority.validityYears === '') { // if a user de-selects validity years we ignore it
         delete authority.validityYears;
       }

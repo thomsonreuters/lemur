@@ -9,7 +9,7 @@ import arrow
 from datetime import timedelta
 
 from flask import current_app
-from sqlalchemy import func, or_, not_, cast, Boolean
+from sqlalchemy import func, or_, not_, cast, Boolean, Integer
 
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
@@ -26,6 +26,8 @@ from lemur.authorities.models import Authority
 from lemur.destinations.models import Destination
 from lemur.certificates.models import Certificate
 from lemur.notifications.models import Notification
+
+from lemur.certificates.schemas import CertificateOutputSchema, CertificateInputSchema
 
 from lemur.roles import service as role_service
 
@@ -297,6 +299,8 @@ def render(args):
                     Certificate.domains.any(Domain.name.ilike('%{0}%'.format(terms[1])))
                 )
             )
+        elif 'id' in terms:
+            query = query.filter(Certificate.id == cast(terms[1], Integer))
         else:
             query = database.filter(query, Certificate, terms)
 
@@ -330,80 +334,45 @@ def create_csr(**csr_config):
 
     :param csr_config:
     """
-
     private_key = generate_private_key(csr_config.get('key_type'))
 
-    # TODO When we figure out a better way to validate these options they should be parsed as str
     builder = x509.CertificateSigningRequestBuilder()
-    builder = builder.subject_name(x509.Name([
-        x509.NameAttribute(x509.OID_COMMON_NAME, csr_config['common_name']),
-        x509.NameAttribute(x509.OID_ORGANIZATION_NAME, csr_config['organization']),
-        x509.NameAttribute(x509.OID_ORGANIZATIONAL_UNIT_NAME, csr_config['organizational_unit']),
-        x509.NameAttribute(x509.OID_COUNTRY_NAME, csr_config['country']),
-        x509.NameAttribute(x509.OID_STATE_OR_PROVINCE_NAME, csr_config['state']),
-        x509.NameAttribute(x509.OID_LOCALITY_NAME, csr_config['location']),
-        x509.NameAttribute(x509.OID_EMAIL_ADDRESS, csr_config['owner'])
-    ]))
+    name_list = [x509.NameAttribute(x509.OID_COMMON_NAME, csr_config['common_name']),
+                 x509.NameAttribute(x509.OID_EMAIL_ADDRESS, csr_config['owner'])]
+    if 'organization' in csr_config and csr_config['organization'].strip():
+        name_list.append(x509.NameAttribute(x509.OID_ORGANIZATION_NAME, csr_config['organization']))
+    if 'organizational_unit' in csr_config and csr_config['organizational_unit'].strip():
+        name_list.append(x509.NameAttribute(x509.OID_ORGANIZATIONAL_UNIT_NAME, csr_config['organizational_unit']))
+    if 'country' in csr_config and csr_config['country'].strip():
+        name_list.append(x509.NameAttribute(x509.OID_COUNTRY_NAME, csr_config['country']))
+    if 'state' in csr_config and csr_config['state'].strip():
+        name_list.append(x509.NameAttribute(x509.OID_STATE_OR_PROVINCE_NAME, csr_config['state']))
+    if 'location' in csr_config and csr_config['location'].strip():
+        name_list.append(x509.NameAttribute(x509.OID_LOCALITY_NAME, csr_config['location']))
+    builder = builder.subject_name(x509.Name(name_list))
 
-    builder = builder.add_extension(
-        x509.BasicConstraints(ca=False, path_length=None), critical=True,
-    )
+    extensions = csr_config.get('extensions', {})
+    critical_extensions = ['basic_constraints', 'sub_alt_names', 'key_usage']
+    noncritical_extensions = ['extended_key_usage']
+    for k, v in extensions.items():
+        if v:
+            if k in critical_extensions:
+                current_app.logger.debug('Adding Critical Extension: {0} {1}'.format(k, v))
+                if k == 'sub_alt_names':
+                    builder = builder.add_extension(v['names'], critical=True)
+                else:
+                    builder = builder.add_extension(v, critical=True)
 
-    if csr_config.get('extensions'):
-        for k, v in csr_config.get('extensions', {}).items():
-            if k == 'sub_alt_names':
-                # map types to their x509 objects
-                general_names = []
-                for name in v['names']:
-                    if name['name_type'] == 'DNSName':
-                        general_names.append(x509.DNSName(name['value']))
+            if k in noncritical_extensions:
+                current_app.logger.debug('Adding Extension: {0} {1}'.format(k, v))
+                builder = builder.add_extension(v, critical=False)
 
-                builder = builder.add_extension(
-                    x509.SubjectAlternativeName(general_names), critical=True
-                )
-
-    # TODO support more CSR options, none of the authority plugins currently support these options
-    #    builder.add_extension(
-    #        x509.KeyUsage(
-    #            digital_signature=digital_signature,
-    #            content_commitment=content_commitment,
-    #            key_encipherment=key_enipherment,
-    #            data_encipherment=data_encipherment,
-    #            key_agreement=key_agreement,
-    #            key_cert_sign=key_cert_sign,
-    #            crl_sign=crl_sign,
-    #            encipher_only=enchipher_only,
-    #            decipher_only=decipher_only
-    #        ), critical=True
-    #    )
-    #
-    #    # we must maintain our own list of OIDs here
-    #    builder.add_extension(
-    #        x509.ExtendedKeyUsage(
-    #            server_authentication=server_authentication,
-    #            email=
-    #        )
-    #    )
-    #
-    #    builder.add_extension(
-    #        x509.AuthorityInformationAccess()
-    #    )
-    #
-    #    builder.add_extension(
-    #        x509.AuthorityKeyIdentifier()
-    #    )
-    #
-    #    builder.add_extension(
-    #        x509.SubjectKeyIdentifier()
-    #    )
-    #
-    #    builder.add_extension(
-    #        x509.CRLDistributionPoints()
-    #    )
-    #
-    #    builder.add_extension(
-    #        x509.ObjectIdentifier(oid)
-    #    )
+    ski = extensions.get('subject_key_identifier', {})
+    if ski.get('include_ski', False):
+        builder = builder.add_extension(
+            x509.SubjectKeyIdentifier.from_public_key(private_key.public_key()),
+            critical=False
+        )
 
     request = builder.sign(
         private_key, hashes.SHA256(), default_backend()
@@ -500,34 +469,15 @@ def get_certificate_primitives(certificate):
     certificate via `create`.
     """
     start, end = calculate_reissue_range(certificate.not_before, certificate.not_after)
-    names = [{'name_type': 'DNSName', 'value': x.name} for x in certificate.domains]
+    data = CertificateInputSchema().load(CertificateOutputSchema().dump(certificate).data).data
 
-    # TODO pull additional extensions
-    extensions = {
-        'sub_alt_names': {
-            'names': names
-        }
-    }
+    # we can't quite tell if we are using a custom name, as this is an automated process (typically)
+    # we will rely on the Lemur generated name
+    data.pop('name', None)
 
-    return dict(
-        authority=certificate.authority,
-        common_name=certificate.cn,
-        description=certificate.description,
-        validity_start=start,
-        validity_end=end,
-        destinations=certificate.destinations,
-        roles=certificate.roles,
-        extensions=extensions,
-        owner=certificate.owner,
-        organization=certificate.organization,
-        organizational_unit=certificate.organizational_unit,
-        country=certificate.country,
-        state=certificate.state,
-        location=certificate.location,
-        key_type=certificate.key_type,
-        notifications=certificate.notifications,
-        rotation=certificate.rotation
-    )
+    data['validity_start'] = start
+    data['validity_end'] = end
+    return data
 
 
 def reissue_certificate(certificate, replace=None, user=None):
@@ -542,6 +492,7 @@ def reissue_certificate(certificate, replace=None, user=None):
 
     if not user:
         primitives['creator'] = certificate.user
+
     else:
         primitives['creator'] = user
 

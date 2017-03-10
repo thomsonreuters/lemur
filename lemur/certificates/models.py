@@ -9,6 +9,7 @@ import arrow
 
 from flask import current_app
 
+from cryptography import x509
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from sqlalchemy.orm import relationship
@@ -199,6 +200,16 @@ class Certificate(db.Model):
     def validity_range(self):
         return self.not_after - self.not_before
 
+    @property
+    def subject(self):
+        cert = lemur.common.utils.parse_certificate(self.body)
+        return cert.subject
+
+    @property
+    def public_key(self):
+        cert = lemur.common.utils.parse_certificate(self.body)
+        return cert.public_key()
+
     @hybrid_property
     def expired(self):
         if self.not_after <= arrow.utcnow():
@@ -229,16 +240,54 @@ class Certificate(db.Model):
 
     @property
     def extensions(self):
-        # TODO pull the OU, O, CN, etc + other extensions.
-        names = [{'name_type': 'DNSName', 'value': x.name} for x in self.domains]
-
-        extensions = {
-            'sub_alt_names': {
-                'names': names
-            }
+        # setup default values
+        return_extensions = {
+            'sub_alt_names': {'names': []}
         }
+        cert = lemur.common.utils.parse_certificate(self.body)
+        for extension in cert.extensions:
+            value = extension.value
+            if isinstance(value, x509.BasicConstraints):
+                return_extensions['basic_constraints'] = value
 
-        return extensions
+            elif isinstance(value, x509.SubjectAlternativeName):
+                return_extensions['sub_alt_names']['names'] = value
+
+            elif isinstance(value, x509.ExtendedKeyUsage):
+                return_extensions['extended_key_usage'] = value
+
+            elif isinstance(value, x509.KeyUsage):
+                return_extensions['key_usage'] = value
+
+            elif isinstance(value, x509.SubjectKeyIdentifier):
+                return_extensions['subject_key_identifier'] = {'include_ski': True}
+
+            elif isinstance(value, x509.AuthorityInformationAccess):
+                return_extensions['certificate_info_access'] = {'include_aia': True}
+
+            elif isinstance(value, x509.AuthorityKeyIdentifier):
+                aki = {
+                    'use_key_identifier': False,
+                    'use_authority_cert': False
+                }
+
+                if value.key_identifier:
+                    aki['use_key_identifier'] = True
+
+                if value.authority_cert_issuer:
+                    aki['use_authority_cert'] = True
+
+                return_extensions['authority_key_identifier'] = aki
+
+            # TODO: Don't support CRLDistributionPoints yet https://github.com/Netflix/lemur/issues/662
+            elif isinstance(value, x509.CRLDistributionPoints):
+                current_app.logger.warning('CRLDistributionPoints not yet supported for clone operation.')
+
+            # TODO: Not supporting custom OIDs yet. https://github.com/Netflix/lemur/issues/665
+            else:
+                current_app.logger.warning('Custom OIDs not yet supported for clone operation.')
+
+        return return_extensions
 
     def get_arn(self, account_number):
         """

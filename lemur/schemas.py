@@ -9,19 +9,43 @@
 """
 from sqlalchemy.orm.exc import NoResultFound
 
-from marshmallow import fields, post_load, pre_load, post_dump, validates_schema
+from marshmallow import fields, post_load, pre_load, post_dump
 from marshmallow.exceptions import ValidationError
 
 from lemur.common import validators
 from lemur.common.schema import LemurSchema, LemurInputSchema, LemurOutputSchema
+from lemur.common.fields import KeyUsageExtension, ExtendedKeyUsageExtension, BasicConstraintsExtension, SubjectAlternativeNameExtension
 
 from lemur.plugins import plugins
+from lemur.plugins.utils import get_plugin_option
 from lemur.roles.models import Role
 from lemur.users.models import User
 from lemur.authorities.models import Authority
 from lemur.certificates.models import Certificate
 from lemur.destinations.models import Destination
 from lemur.notifications.models import Notification
+
+
+def validate_options(options):
+    """
+    Ensures that the plugin options are valid.
+    :param options:
+    :return:
+    """
+    interval = get_plugin_option('interval', options)
+    unit = get_plugin_option('unit', options)
+
+    if not interval and not unit:
+        return
+
+    if interval == 'month':
+        unit *= 30
+
+    elif interval == 'week':
+        unit *= 7
+
+    if unit > 90:
+        raise ValidationError('Notification cannot be more than 90 days into the future.')
 
 
 def get_object_attribute(data, many=False):
@@ -126,7 +150,7 @@ class AssociatedUserSchema(LemurInputSchema):
 
 
 class PluginInputSchema(LemurInputSchema):
-    plugin_options = fields.List(fields.Dict())
+    plugin_options = fields.List(fields.Dict(), validate=validate_options)
     slug = fields.String(required=True)
     title = fields.String()
     description = fields.String()
@@ -166,10 +190,6 @@ class BaseExtensionSchema(LemurSchema):
         return data
 
 
-class BasicConstraintsSchema(BaseExtensionSchema):
-    pass
-
-
 class AuthorityKeyIdentifierSchema(BaseExtensionSchema):
     use_key_identifier = fields.Boolean()
     use_authority_cert = fields.Boolean()
@@ -183,50 +203,12 @@ class CertificateInfoAccessSchema(BaseExtensionSchema):
         return {'includeAIA': data['include_aia']}
 
 
-class KeyUsageSchema(BaseExtensionSchema):
-    use_crl_sign = fields.Boolean()
-    use_data_encipherment = fields.Boolean()
-    use_decipher_only = fields.Boolean()
-    use_encipher_only = fields.Boolean()
-    use_key_encipherment = fields.Boolean()
-    use_digital_signature = fields.Boolean()
-    use_non_repudiation = fields.Boolean()
-    use_key_agreement = fields.Boolean()
-    use_key_cert_sign = fields.Boolean()
-
-
-class ExtendedKeyUsageSchema(BaseExtensionSchema):
-    use_server_authentication = fields.Boolean()
-    use_client_authentication = fields.Boolean()
-    use_eap_over_lan = fields.Boolean()
-    use_eap_over_ppp = fields.Boolean()
-    use_ocsp_signing = fields.Boolean()
-    use_smart_card_logon = fields.Boolean()
-    use_timestamping = fields.Boolean()
-    use_code_signing = fields.Boolean()
-    use_email_protection = fields.Boolean()
-
-
 class SubjectKeyIdentifierSchema(BaseExtensionSchema):
     include_ski = fields.Boolean()
 
     @post_dump
     def handle_keys(self, data):
         return {'includeSKI': data['include_ski']}
-
-
-class SubAltNameSchema(BaseExtensionSchema):
-    name_type = fields.String(validate=validators.sub_alt_type)
-    value = fields.String()
-
-    @validates_schema
-    def check_sensitive(self, data):
-        if data.get('name_type') == 'DNSName':
-            validators.sensitive_domain(data['value'])
-
-
-class SubAltNamesSchema(BaseExtensionSchema):
-    names = fields.Nested(SubAltNameSchema, many=True)
 
 
 class CustomOIDSchema(BaseExtensionSchema):
@@ -236,14 +218,20 @@ class CustomOIDSchema(BaseExtensionSchema):
     is_critical = fields.Boolean()
 
 
+class NamesSchema(BaseExtensionSchema):
+    names = SubjectAlternativeNameExtension()
+
+
 class ExtensionSchema(BaseExtensionSchema):
-    basic_constraints = fields.Nested(BasicConstraintsSchema)
-    key_usage = fields.Nested(KeyUsageSchema)
-    extended_key_usage = fields.Nested(ExtendedKeyUsageSchema)
+    basic_constraints = BasicConstraintsExtension(missing={'ca': False})
+    key_usage = KeyUsageExtension()
+    extended_key_usage = ExtendedKeyUsageExtension()
     subject_key_identifier = fields.Nested(SubjectKeyIdentifierSchema)
-    sub_alt_names = fields.Nested(SubAltNamesSchema)
+    sub_alt_names = fields.Nested(NamesSchema)
     authority_key_identifier = fields.Nested(AuthorityKeyIdentifierSchema)
     certificate_info_access = fields.Nested(CertificateInfoAccessSchema)
+    # FIXME: Convert custom OIDs to a custom field in fields.py like other Extensions
+    # FIXME: Remove support in UI for Critical custom extensions https://github.com/Netflix/lemur/issues/665
     custom = fields.List(fields.Nested(CustomOIDSchema))
 
 

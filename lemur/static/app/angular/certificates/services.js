@@ -107,7 +107,43 @@ angular.module('lemur')
           });
         },
         useTemplate: function () {
+          if (this.extensions === undefined) {
+            this.extensions = {};
+          }
+
+          if (this.extensions.subAltNames === undefined) {
+            this.extensions.subAltNames = {'names': []};
+          }
+
+          var saveSubAltNames = this.extensions.subAltNames;
           this.extensions = this.template.extensions;
+          this.extensions.subAltNames = saveSubAltNames;
+        },
+        setEncipherOrDecipher: function (value) {
+          if (this.extensions === undefined) {
+            this.extensions = {};
+          }
+          if (this.extensions.keyUsage === undefined) {
+            this.extensions.keyUsage = {};
+          }
+          var existingValue = this.extensions.keyUsage[value];
+          if (existingValue) {
+            // Clicked on the already-selected value
+            this.extensions.keyUsage.useDecipherOnly = false;
+            this.extensions.keyUsage.useEncipherOnly = false;
+            // Uncheck both radio buttons
+            this.encipherOrDecipher = false;
+          } else {
+            // Clicked a different value
+            this.extensions.keyUsage.useKeyAgreement = true;
+            if (value === 'useEncipherOnly') {
+              this.extensions.keyUsage.useDecipherOnly = false;
+              this.extensions.keyUsage.useEncipherOnly = true;
+            } else {
+              this.extensions.keyUsage.useEncipherOnly = false;
+              this.extensions.keyUsage.useDecipherOnly = true;
+            }
+          }
         }
       });
     });

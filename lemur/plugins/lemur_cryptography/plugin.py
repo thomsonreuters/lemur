@@ -17,77 +17,155 @@ from cryptography.hazmat.primitives import hashes, serialization
 from lemur.plugins.bases import IssuerPlugin
 from lemur.plugins import lemur_cryptography as cryptography_issuer
 
-from lemur.common.utils import generate_private_key
+from lemur.certificates.service import create_csr
 
 
-def build_root_certificate(options):
-    private_key = generate_private_key(options.get('key_type'))
+def build_certificate_authority(options):
+    options['certificate_authority'] = True
+    csr, private_key = create_csr(**options)
+    cert_pem, chain_cert_pem = issue_certificate(csr, options, private_key)
 
-    subject = issuer = x509.Name([
-        x509.NameAttribute(x509.OID_COUNTRY_NAME, options['country']),
-        x509.NameAttribute(x509.OID_STATE_OR_PROVINCE_NAME, options['state']),
-        x509.NameAttribute(x509.OID_LOCALITY_NAME, options['location']),
-        x509.NameAttribute(x509.OID_ORGANIZATION_NAME, options['organization']),
-        x509.NameAttribute(x509.OID_ORGANIZATIONAL_UNIT_NAME, options['organizational_unit']),
-        x509.NameAttribute(x509.OID_COMMON_NAME, options['common_name'])
-    ])
-
-    builder = x509.CertificateBuilder(
-        subject_name=subject,
-        issuer_name=issuer,
-        public_key=private_key.public_key(),
-        not_valid_after=options['validity_end'],
-        not_valid_before=options['validity_start'],
-        serial_number=options['first_serial']
-    )
-
-    builder.add_extension(x509.SubjectAlternativeName([x509.DNSName(options['common_name'])]), critical=False)
-
-    cert = builder.sign(private_key, hashes.SHA256(), default_backend())
-
-    cert_pem = cert.public_bytes(
-        encoding=serialization.Encoding.PEM
-    ).decode('utf-8')
-
-    private_key_pem = private_key.private_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PrivateFormat.TraditionalOpenSSL,  # would like to use PKCS8 but AWS ELBs don't like it
-        encryption_algorithm=serialization.NoEncryption()
-    )
-
-    return cert_pem, private_key_pem
+    return cert_pem, private_key, chain_cert_pem
 
 
-def issue_certificate(csr, options):
+def issue_certificate(csr, options, private_key=None):
     csr = x509.load_pem_x509_csr(csr.encode('utf-8'), default_backend())
 
+    if options.get("parent"):
+        # creating intermediate authorities will have options['parent'] to specify the issuer
+        # creating certificates will have options['authority'] to specify the issuer
+        # This works around that by making sure options['authority'] can be referenced for either
+        options['authority'] = options['parent']
+
+    if options.get("authority"):
+        # Issue certificate signed by an existing lemur_certificates authority
+        issuer_subject = options['authority'].authority_certificate.subject
+        issuer_private_key = options['authority'].authority_certificate.private_key
+        chain_cert_pem = options['authority'].authority_certificate.body
+        authority_key_identifier_public = options['authority'].authority_certificate.public_key
+        authority_key_identifier_subject = x509.SubjectKeyIdentifier.from_public_key(authority_key_identifier_public)
+        authority_key_identifier_issuer = issuer_subject
+        authority_key_identifier_serial = int(options['authority'].authority_certificate.serial)
+        # TODO figure out a better way to increment serial
+        # New authorities have a value at options['serial_number'] that is being ignored here.
+        serial = int(uuid.uuid4())
+    else:
+        # Issue certificate that is self-signed (new lemur_certificates root authority)
+        issuer_subject = csr.subject
+        issuer_private_key = private_key
+        chain_cert_pem = ""
+        authority_key_identifier_public = csr.public_key()
+        authority_key_identifier_subject = None
+        authority_key_identifier_issuer = csr.subject
+        authority_key_identifier_serial = options['serial_number']
+        # TODO figure out a better way to increment serial
+        serial = int(uuid.uuid4())
+
+    extensions = normalize_extensions(csr)
+
     builder = x509.CertificateBuilder(
-        issuer_name=x509.Name([
-            x509.NameAttribute(
-                x509.OID_ORGANIZATION_NAME,
-                options['authority'].authority_certificate.issuer
-            )]
-        ),
+        issuer_name=issuer_subject,
         subject_name=csr.subject,
         public_key=csr.public_key(),
         not_valid_before=options['validity_start'],
         not_valid_after=options['validity_end'],
-        extensions=csr.extensions)
+        serial_number=serial,
+        extensions=extensions)
 
-    # TODO figure out a better way to increment serial
-    builder = builder.serial_number(int(uuid.uuid4()))
+    for k, v in options.get('extensions', {}).items():
+        if k == 'authority_key_identifier':
+            # One or both of these options may be present inside the aki extension
+            (authority_key_identifier, authority_identifier) = (False, False)
+            for k2, v2 in v.items():
+                if k2 == 'use_key_identifier' and v2:
+                    authority_key_identifier = True
+                if k2 == 'use_authority_cert' and v2:
+                    authority_identifier = True
+            if authority_key_identifier:
+                if authority_key_identifier_subject:
+                    # FIXME in python-cryptography.
+                    # from_issuer_subject_key_identifier(cls, ski) is looking for ski.value.digest
+                    # but the digest of the ski is at just ski.digest. Until that library is fixed,
+                    # this function won't work. The second line has the same result.
+                    # aki = x509.AuthorityKeyIdentifier.from_issuer_subject_key_identifier(authority_key_identifier_subject)
+                    aki = x509.AuthorityKeyIdentifier(authority_key_identifier_subject.digest, None, None)
+                else:
+                    aki = x509.AuthorityKeyIdentifier.from_issuer_public_key(authority_key_identifier_public)
+            elif authority_identifier:
+                aki = x509.AuthorityKeyIdentifier(None, [x509.DirectoryName(authority_key_identifier_issuer)], authority_key_identifier_serial)
+            builder = builder.add_extension(aki, critical=False)
+        if k == 'certificate_info_access':
+            # FIXME: Implement the AuthorityInformationAccess extension
+            # descriptions = [
+            #     x509.AccessDescription(x509.oid.AuthorityInformationAccessOID.OCSP, x509.UniformResourceIdentifier(u"http://FIXME")),
+            #     x509.AccessDescription(x509.oid.AuthorityInformationAccessOID.CA_ISSUERS, x509.UniformResourceIdentifier(u"http://FIXME"))
+            # ]
+            # for k2, v2 in v.items():
+            #     if k2 == 'include_aia' and v2 == True:
+            #         builder = builder.add_extension(
+            #             x509.AuthorityInformationAccess(descriptions),
+            #             critical=False
+            #         )
+            pass
+        if k == 'crl_distribution_points':
+            # FIXME: Implement the CRLDistributionPoints extension
+            # FIXME: Not implemented in lemur/schemas.py yet https://github.com/Netflix/lemur/issues/662
+            pass
 
     private_key = serialization.load_pem_private_key(
-        bytes(str(options['authority'].authority_certificate.private_key).encode('utf-8')),
+        bytes(str(issuer_private_key).encode('utf-8')),
         password=None,
         backend=default_backend()
     )
 
     cert = builder.sign(private_key, hashes.SHA256(), default_backend())
-
-    return cert.public_bytes(
+    cert_pem = cert.public_bytes(
         encoding=serialization.Encoding.PEM
     ).decode('utf-8')
+
+    return cert_pem, chain_cert_pem
+
+
+def normalize_extensions(csr):
+    try:
+        san_extension = csr.extensions.get_extension_for_oid(x509.oid.ExtensionOID.SUBJECT_ALTERNATIVE_NAME)
+        san_dnsnames = san_extension.value.get_values_for_type(x509.DNSName)
+    except x509.extensions.ExtensionNotFound:
+        san_dnsnames = []
+        san_extension = x509.Extension(x509.oid.ExtensionOID.SUBJECT_ALTERNATIVE_NAME, True, x509.SubjectAlternativeName(san_dnsnames))
+
+    common_name = csr.subject.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)
+    common_name = common_name[0].value
+
+    if common_name not in san_dnsnames and " " not in common_name:
+        # CommonName isn't in SAN and CommonName has no spaces that will cause idna errors
+        # Create new list of GeneralNames for including in the SAN extension
+        general_names = []
+        try:
+            # Try adding Subject CN as first SAN general_name
+            general_names.append(x509.DNSName(common_name))
+        except TypeError:
+            # CommonName probably not a valid string for DNSName
+            pass
+
+        # Add all submitted SAN names to general_names
+        for san in san_extension.value:
+            general_names.append(san)
+
+        san_extension = x509.Extension(x509.oid.ExtensionOID.SUBJECT_ALTERNATIVE_NAME, True, x509.SubjectAlternativeName(general_names))
+
+    # Remove original san extension from CSR and add new SAN extension
+    extensions = list(filter(filter_san_extensions, csr.extensions._extensions))
+    if san_extension is not None and len(san_extension.value._general_names) > 0:
+        extensions.append(san_extension)
+
+    return extensions
+
+
+def filter_san_extensions(ext):
+    if ext.oid == x509.oid.ExtensionOID.SUBJECT_ALTERNATIVE_NAME:
+        return False
+    return True
 
 
 class CryptographyIssuerPlugin(IssuerPlugin):
@@ -108,8 +186,8 @@ class CryptographyIssuerPlugin(IssuerPlugin):
         :return: :raise Exception:
         """
         current_app.logger.debug("Issuing new cryptography certificate with options: {0}".format(options))
-        cert = issue_certificate(csr, options)
-        return cert, ""
+        cert_pem, chain_cert_pem = issue_certificate(csr, options)
+        return cert_pem, chain_cert_pem
 
     @staticmethod
     def create_authority(options):
@@ -121,9 +199,9 @@ class CryptographyIssuerPlugin(IssuerPlugin):
         :return:
         """
         current_app.logger.debug("Issuing new cryptography authority with options: {0}".format(options))
-        cert, private_key = build_root_certificate(options)
+        cert_pem, private_key, chain_cert_pem = build_certificate_authority(options)
         roles = [
             {'username': '', 'password': '', 'name': options['name'] + '_admin'},
             {'username': '', 'password': '', 'name': options['name'] + '_operator'}
         ]
-        return cert, private_key, "", roles
+        return cert_pem, private_key, chain_cert_pem, roles

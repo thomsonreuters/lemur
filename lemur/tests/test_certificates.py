@@ -6,6 +6,7 @@ import datetime
 import arrow
 
 from freezegun import freeze_time
+from cryptography import x509
 
 from lemur.certificates.views import *  # noqa
 
@@ -29,7 +30,7 @@ def test_get_or_increase_name(session, certificate):
 def test_get_certificate_primitives(certificate):
     from lemur.certificates.service import get_certificate_primitives
 
-    names = [{'name_type': 'DNSName', 'value': x.name} for x in certificate.domains]
+    names = [x509.DNSName(x.name) for x in certificate.domains]
 
     data = {
         'common_name': certificate.cn,
@@ -37,9 +38,7 @@ def test_get_certificate_primitives(certificate):
         'authority': certificate.authority,
         'description': certificate.description,
         'extensions': {
-            'sub_alt_names': {
-                'names': names
-            }
+            'sub_alt_names': x509.SubjectAlternativeName(names)
         },
         'destinations': [],
         'roles': [],
@@ -54,7 +53,7 @@ def test_get_certificate_primitives(certificate):
 
     with freeze_time(datetime.date(year=2016, month=10, day=30)):
         primitives = get_certificate_primitives(certificate)
-        assert len(primitives) == 17
+        assert len(primitives) == 20
 
 
 def test_certificate_edit_schema(session):
@@ -124,15 +123,13 @@ def test_extension_schema(client):
         },
         'subjectKeyIdentifier': {
             'includeSKI': True
-        },
-        'subAltNames': {
-            'names': [
-                {'nameType': 'DNSName', 'value': 'test.example.com'}
-            ]
         }
     }
 
     data, errors = ExtensionSchema().load(input_data)
+    assert not errors
+
+    data, errors = ExtensionSchema().dump(data)
     assert not errors
 
 
@@ -171,10 +168,10 @@ def test_certificate_input_with_extensions(client, authority):
         'description': 'testtestest',
         'extensions': {
             'keyUsage': {
-                'useKeyEncipherment': True,
-                'useDigitalSignature': True
+                'digital_signature': True
             },
             'extendedKeyUsage': {
+                'useClientAuthentication': True,
                 'useServerAuthentication': True
             },
             'subjectKeyIdentifier': {
@@ -245,90 +242,6 @@ def test_certificate_valid_dates(client, authority):
     assert not errors
 
 
-def test_sub_alt_name_schema(session):
-    from lemur.schemas import SubAltNameSchema  # SubAltNamesSchema
-    input_data = {'nameType': 'DNSName', 'value': 'test.example.com'}
-
-    data, errors = SubAltNameSchema().load(input_data)
-    assert not errors
-    assert data == {'name_type': 'DNSName', 'value': 'test.example.com'}
-
-    data, errors = SubAltNameSchema().dumps(data)
-    assert not errors
-
-    input_datas = {'names': [input_data]}
-
-    # data, errors = SubAltNamesSchema().load(input_datas)
-    # assert not errors
-    # assert data == {'names': [{'name_type': 'DNSName', 'value': 'test.example.com'}]}
-
-    # data, errors = SubAltNamesSchema().dumps(data)
-    # assert data == json.dumps(input_datas)
-    # assert not errors
-
-    input_data = {'nameType': 'CNAME', 'value': 'test.example.com'}
-    data, errors = SubAltNameSchema().load(input_data)
-    assert errors
-
-
-def test_key_usage_schema():
-    from lemur.schemas import KeyUsageSchema
-
-    input_data = {
-        'useCRLSign': True,
-        'useDataEncipherment': True,
-        'useDecipherOnly': True,
-        'useEncipherOnly': True,
-        'useKeyEncipherment': True,
-        'useDigitalSignature': True,
-        'useNonRepudiation': True
-    }
-
-    data, errors = KeyUsageSchema().load(input_data)
-
-    assert not errors
-    assert data == {
-        'use_crl_sign': True,
-        'use_data_encipherment': True,
-        'use_decipher_only': True,
-        'use_encipher_only': True,
-        'use_key_encipherment': True,
-        'use_digital_signature': True,
-        'use_non_repudiation': True
-    }
-
-
-def test_extended_key_usage_schema():
-    from lemur.schemas import ExtendedKeyUsageSchema
-
-    input_data = {
-        'useServerAuthentication': True,
-        'useClientAuthentication': True,
-        'useEapOverLAN': True,
-        'useEapOverPPP': True,
-        'useOCSPSigning': True,
-        'useSmartCardLogon': True,
-        'useTimestamping': True,
-        'useCodeSigning': True,
-        'useEmailProtection': True
-    }
-
-    data, errors = ExtendedKeyUsageSchema().load(input_data)
-
-    assert not errors
-    assert data == {
-        'use_server_authentication': True,
-        'use_client_authentication': True,
-        'use_eap_over_lan': True,
-        'use_eap_over_ppp': True,
-        'use_ocsp_signing': True,
-        'use_smart_card_logon': True,
-        'use_timestamping': True,
-        'use_code_signing': True,
-        'use_email_protection': True
-    }
-
-
 def test_create_basic_csr(client):
     from cryptography import x509
     from cryptography.hazmat.backends import default_backend
@@ -342,7 +255,7 @@ def test_create_basic_csr(client):
         location='A place',
         owner='joe@example.com',
         key_type='RSA2048',
-        extensions=dict(names=dict(sub_alt_names=['test.example.com', 'test2.example.com']))
+        extensions=dict(names=dict(sub_alt_names=x509.SubjectAlternativeName([x509.DNSName('test.example.com'), x509.DNSName('test2.example.com')])))
     )
     csr, pem = create_csr(**csr_config)
 
@@ -395,7 +308,7 @@ def test_create_csr():
     assert csr
     assert private_key
 
-    extensions = {'sub_alt_names': {'names': [{'name_type': 'DNSName', 'value': 'AnotherCommonName'}]}}
+    extensions = {'sub_alt_names': {'names': x509.SubjectAlternativeName([x509.DNSName('AnotherCommonName')])}}
     csr, private_key = create_csr(owner='joe@example.com', common_name='ACommonName', organization='test', organizational_unit='Meters', country='US',
                                   state='CA', location='Here', extensions=extensions, key_type='RSA2048')
     assert csr
