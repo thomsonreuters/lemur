@@ -26,7 +26,8 @@ var gulp = require('gulp'),
   minifyHtml = require('gulp-minify-html'),
   bowerFiles = require('main-bower-files'),
   karma = require('karma'),
-  replace = require('gulp-replace');
+  replace = require('gulp-replace'),
+  argv = require('yargs').argv;
 
 gulp.task('default', ['clean'], function () {
   gulp.start('fonts', 'styles');
@@ -230,9 +231,10 @@ gulp.task('package:strip', function () {
 });
 
 gulp.task('addprefix',['addprefix:revreplace'], function(){
+  let prefixExists = argv.prefix ? true : false;
   return gulp.src('lemur/static/dist/scripts/main*.js')
-    .pipe(replace('api/','lemur/api/'))
-    .pipe(replace('angular/', 'lemur/angular/'))
+    .pipe(gulpif(prefixExists, replace('api/', argv.prefix + '/api/')))
+    .pipe(gulpif(prefixExists, replace('angular/', argv.prefix + '/angular/')))
     .pipe(gulp.dest('lemur/static/dist/scripts'))
 });
 
@@ -246,9 +248,9 @@ gulp.task('addprefix:revision', function(){
 
 gulp.task('addprefix:revreplace', ['addprefix:revision'], function(){
   var manifest = gulp.src("lemur/static/dist/rev-manifest.json");
-
+  let prefixExists = argv.prefix ? true : false;
   return gulp.src( "lemur/static/dist/index.html")
-    .pipe(revReplace({prefix:'lemur/', manifest: manifest}))
+    .pipe(gulpif(prefixExists, revReplace({prefix: argv.prefix + '/', manifest: manifest}, revReplace({manifest: manifest}))))
     .pipe(gulp.dest('lemur/static/dist'));
 })
 
